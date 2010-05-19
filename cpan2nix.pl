@@ -17,8 +17,8 @@ use CPAN;
 use Cwd;
 use YAML;
 
-my ($help, $has_nix_prefetch) = (0, 0);
-my $cpan_base = "http://search.cpan.org/CPAN/";
+my ($help) = (0, 0);
+my $cpan_base = "http://search.cpan.org/CPAN/authors/id/";
 my $nix_exprs = {};
 
 sub split_cpan_name {
@@ -31,11 +31,11 @@ sub trim {
 
 sub nix_prefetch_url {
     my ($url) = @_;
-    return "" if !$has_nix_prefetch;
 
+    print STDERR "$cpan_base$url\n";
     my $sha = `nix-prefetch-url $cpan_base$url`;
     chomp $sha;
-    return $sha;
+    return (split /\n/, $sha)[-1];
 }
 
 sub name_to_nix {
@@ -105,10 +105,6 @@ $CPAN::Be_Silent = 1;
 $CPAN::Config->{keep_source_where} = "sources";
 $CPAN::Config->{prerequisites_policy} = "follow";
 $CPAN::Frontend = "QuietShell";
-
-if (`which nix_prefetch_url`) {
-    $has_nix_prefetch = 1;
-}
 
 for my $a (@ARGV) {
     load_expression($a);
