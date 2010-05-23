@@ -74,7 +74,7 @@ sub load_expression {
         return if $base_id =~ m/^perl.*/;
 
         # prevent infinite recursion
-        next if $nix_exprs->{$base_id};
+        return $base_id if $nix_exprs->{$base_id};
         print STDERR "Loading $mod\n";
         $nix_exprs->{$base_id} = {};
 
