@@ -19,8 +19,8 @@ use CPAN;
 use Cwd;
 use YAML;
 
-my ($help, $has_nix_prefetch) = (0, 0);
-my $cpan_base = "http://search.cpan.org/CPAN/";
+my ($help) = (0, 0);
+my $cpan_base = "http://search.cpan.org/CPAN/authors/id/";
 my $nix_exprs = {};
 
 sub split_cpan_name {
@@ -39,11 +39,11 @@ sub is_core_module {
 
 sub nix_prefetch_url {
     my ($url) = @_;
-    return "" if !$has_nix_prefetch;
 
+    print STDERR "$cpan_base$url\n";
     my $sha = `nix-prefetch-url $cpan_base$url`;
     chomp $sha;
-    return $sha;
+    return (split /\n/, $sha)[-1];
 }
 
 sub name_to_nix {
@@ -62,9 +62,9 @@ sub find_prereqs {
     my $reqs = "";
     for my $p (sort (keys %$config)) {
         next if is_core_module($p);
-        load_expression($p);
-        if ($nix_exprs->{$p} && $nix_exprs->{$p}->{name}) {
-            $reqs .= $nix_exprs->{$p}->{name} . " " if $nix_exprs->{$p};
+        my $bid = load_expression($p);
+        if ($bid && $nix_exprs->{$bid} && $nix_exprs->{$bid}->{name}) {
+            $reqs .= $nix_exprs->{$bid}->{name} . " ";
         }
     }
     return "\n    buildInput = [" . trim($reqs) . "];" if $reqs;
@@ -73,34 +73,37 @@ sub find_prereqs {
 sub load_expression {
     my ($mod) = @_;
 
-    # prevent infinite recursion
-    return if $nix_exprs->{$mod};
-
     my @ms = CPAN::Shell->expand("Module", $mod);
     $CPAN::Config->{keep_source_where} = File::Spec->catfile(cwd(), "sources");
     for my $m (@ms) {
         my $pack = $CPAN::META->instance('CPAN::Distribution', $m->cpan_file);
-        # perl-.* should already be installed
-        return if $pack->base_id =~ m/^perl.*/;
+        my $base_id = $pack->base_id;
 
+        # perl-.* should already be installed
+        return if $base_id =~ m/^perl.*/;
+
+        # prevent infinite recursion
+        return $base_id if $nix_exprs->{$base_id};
         print STDERR "Loading $mod\n";
-        $nix_exprs->{$mod} = { };
+        $nix_exprs->{$base_id} = {};
 
         my ($path, $name) = split_cpan_name($m->cpan_file);
         my $exp_name = name_to_nix($name);
         my $exp_preqs = find_prereqs($pack);
         my $sha = nix_prefetch_url($m->cpan_file);
 
-        $nix_exprs->{$mod}->{name} = $exp_name;
-        $nix_exprs->{$mod}->{expr} = <<EOF
+        $nix_exprs->{$base_id}->{name} = $exp_name;
+        $nix_exprs->{$base_id}->{expr} = <<EOF
   $exp_name = buildPerlPackage rec {
     name = "$name";
-    fetchurl {
+    src = fetchurl {
       url = "mirror://cpan/authors/id/$path/\${name}.tar.gz";
       sha256 = "$sha";
     }; $exp_preqs
   };
 EOF
+        ;
+        return $base_id;
     }
 }
 
@@ -114,10 +117,6 @@ $CPAN::Be_Silent = 1;
 $CPAN::Config->{keep_source_where} = "sources";
 $CPAN::Config->{prerequisites_policy} = "follow";
 $CPAN::Frontend = "QuietShell";
-
-if (`which nix_prefetch_url`) {
-    $has_nix_prefetch = 1;
-}
 
 for my $a (@ARGV) {
     load_expression($a);
