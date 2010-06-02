@@ -12,7 +12,9 @@ sub mysleep { }
 package MAIN;
 
 use Getopt::Long;
+use Module::CoreList;
 use Pod::Usage;
+
 use CPAN;
 use Cwd;
 use YAML;
@@ -27,6 +29,12 @@ sub split_cpan_name {
 
 sub trim {
     return $1 if $_[0] =~ m/^\s*(.*?)\s*$/;
+}
+
+sub is_core_module {
+    my $module = shift;
+    my @mods = Module::CoreList->find_modules(qr/^$module$/);
+    return 1 if (@mods);
 }
 
 sub nix_prefetch_url {
@@ -53,6 +61,7 @@ sub find_prereqs {
     my $config = $yaml->{requires};
     my $reqs = "";
     for my $p (sort (keys %$config)) {
+        next if is_core_module($p);
         load_expression($p);
         if ($nix_exprs->{$p} && $nix_exprs->{$p}->{name}) {
             $reqs .= $nix_exprs->{$p}->{name} . " " if $nix_exprs->{$p};
